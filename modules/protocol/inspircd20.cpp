@@ -42,6 +42,14 @@ class InspIRCd20Proto : public IRCDProto
 		insp12->SendConnect();
 	}
 
+	void SendSVSJoin(const MessageSource &source, User *u, const Anope::string &chan, const Anope::string &other) anope_override
+	{
+		if (!Servers::Capab.count("SVSJOINKEY"))
+			return insp12->SendSVSJoin(source, u, chan, other);
+
+		UplinkSocket::Message(Me) << "ENCAP " << u->GetUID().substr(0, 3) << " SVSJOINKEY " << u->GetUID() << " " << chan << " :" << other;
+	}
+
 	void SendSVSKillInternal(const MessageSource &source, User *user, const Anope::string &buf) anope_override { insp12->SendSVSKillInternal(source, user, buf); }
 	void SendGlobalNotice(BotInfo *bi, const Server *dest, const Anope::string &msg) anope_override { insp12->SendGlobalNotice(bi, dest, msg); }
 	void SendGlobalPrivmsg(BotInfo *bi, const Server *dest, const Anope::string &msg) anope_override { insp12->SendGlobalPrivmsg(bi, dest, msg); }
@@ -62,7 +70,6 @@ class InspIRCd20Proto : public IRCDProto
 	void SendSVSHoldDel(const Anope::string &nick) anope_override { insp12->SendSVSHoldDel(nick); }
 	void SendSZLineDel(const XLine *x) anope_override { insp12->SendSZLineDel(x); }
 	void SendSZLine(User *u, const XLine *x) anope_override { insp12->SendSZLine(u, x); }
-	void SendSVSJoin(const MessageSource &source, User *u, const Anope::string &chan, const Anope::string &other) anope_override { insp12->SendSVSJoin(source, u, chan, other); }
 	void SendSVSPart(const MessageSource &source, User *u, const Anope::string &chan, const Anope::string &param) anope_override { insp12->SendSVSPart(source, u, chan, param); }
 	void SendSWhois(const MessageSource &bi, const Anope::string &who, const Anope::string &mask) anope_override { insp12->SendSWhois(bi, who, mask); }
 	void SendBOB() anope_override { insp12->SendBOB(); }
@@ -471,6 +478,8 @@ struct IRCDMessageCapab : Message::Capab
 				}
 				else if (module.equals_cs("m_topiclock.so"))
 					Servers::Capab.insert("TOPICLOCK");
+				else if (module.equals_cs("m_svsjoinkey.so"))
+					Servers::Capab.insert("SVSJOINKEY");
 			}
 		}
 		else if (params[0].equals_cs("MODSUPPORT") && params.size() > 1)
