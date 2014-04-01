@@ -248,10 +248,13 @@ std::pair<Channel::ModeList::iterator, Channel::ModeList::iterator> Channel::Get
 	return std::make_pair(it, it_end);
 }
 
-void Channel::SetModeInternal(MessageSource &setter, ChannelMode *cm, const Anope::string &param, bool enforce_mlock)
+void Channel::SetModeInternal(MessageSource &setter, ChannelMode *ocm, const Anope::string &oparam, bool enforce_mlock)
 {
-	if (!cm)
+	if (!ocm)
 		return;
+
+	Anope::string param = oparam;
+	ChannelMode* cm = ocm->Unwrap(param);
 
 	EventReturn MOD_RESULT;
 
@@ -315,10 +318,13 @@ void Channel::SetModeInternal(MessageSource &setter, ChannelMode *cm, const Anop
 	this->CheckModes();
 }
 
-void Channel::RemoveModeInternal(MessageSource &setter, ChannelMode *cm, const Anope::string &param, bool enforce_mlock)
+void Channel::RemoveModeInternal(MessageSource &setter, ChannelMode *ocm, const Anope::string &oparam, bool enforce_mlock)
 {
-	if (!cm)
+	if (!ocm)
 		return;
+
+	Anope::string param = oparam;
+	ChannelMode* cm = ocm->Unwrap(param);
 
 	EventReturn MOD_RESULT;
 
@@ -392,10 +398,14 @@ void Channel::RemoveModeInternal(MessageSource &setter, ChannelMode *cm, const A
 	this->CheckModes();
 }
 
-void Channel::SetMode(BotInfo *bi, ChannelMode *cm, const Anope::string &param, bool enforce_mlock)
+void Channel::SetMode(BotInfo *bi, ChannelMode *ocm, const Anope::string &oparam, bool enforce_mlock)
 {
-	if (!cm)
+	if (!ocm)
 		return;
+
+	Anope::string param = oparam;
+	ChannelMode* cm = ocm;
+
 	/* Don't set modes already set */
 	if (cm->type == MODE_REGULAR && HasMode(cm->name))
 		return;
@@ -415,7 +425,7 @@ void Channel::SetMode(BotInfo *bi, ChannelMode *cm, const Anope::string &param, 
 		if (!u || HasUserStatus(u, anope_dynamic_static_cast<ChannelModeStatus *>(cm)))
 			return;
 	}
-	else if (cm->type == MODE_LIST)
+	else if (cm->type == MODE_LIST || cm->type == MODE_VIRTUAL)
 	{
 		ChannelModeList *cml = anope_dynamic_static_cast<ChannelModeList *>(cm);
 		if (this->HasMode(cm->name, param) || !cml->IsValid(param))
@@ -433,6 +443,8 @@ void Channel::SetMode(BotInfo *bi, ChannelMode *cm, const Anope::string &param, 
 		this->chanserv_modecount++;
 	}
 
+	cm = ocm->Wrap(param);
+
 	ModeManager::StackerAdd(bi, this, cm, true, param);
 	MessageSource ms(bi);
 	SetModeInternal(ms, cm, param, enforce_mlock);
@@ -443,10 +455,14 @@ void Channel::SetMode(BotInfo *bi, const Anope::string &mname, const Anope::stri
 	SetMode(bi, ModeManager::FindChannelModeByName(mname), param, enforce_mlock);
 }
 
-void Channel::RemoveMode(BotInfo *bi, ChannelMode *cm, const Anope::string &param, bool enforce_mlock)
+void Channel::RemoveMode(BotInfo *bi, ChannelMode *ocm, const Anope::string &oparam, bool enforce_mlock)
 {
-	if (!cm)
+	if (!ocm)
 		return;
+
+	Anope::string param = oparam;
+	ChannelMode* cm = ocm;
+
 	/* Don't unset modes that arent set */
 	if ((cm->type == MODE_REGULAR || cm->type == MODE_PARAM) && !HasMode(cm->name))
 		return;
@@ -457,7 +473,7 @@ void Channel::RemoveMode(BotInfo *bi, ChannelMode *cm, const Anope::string &para
 		if (!u || !HasUserStatus(u, anope_dynamic_static_cast<ChannelModeStatus *>(cm)))
 			return;
 	}
-	else if (cm->type == MODE_LIST)
+	else if (cm->type == MODE_LIST || cm->type == MODE_VIRTUAL)
 	{
 		if (!this->HasMode(cm->name, param))
 			return;
@@ -483,6 +499,8 @@ void Channel::RemoveMode(BotInfo *bi, ChannelMode *cm, const Anope::string &para
 
 		this->chanserv_modecount++;
 	}
+
+	cm = ocm->Wrap(realparam);
 
 	ModeManager::StackerAdd(bi, this, cm, false, realparam);
 	MessageSource ms(bi);
@@ -849,21 +867,21 @@ void Channel::SetCorrectModes(User *user, bool give_modes)
 	}
 }
 
-bool Channel::Unban(User *u, bool full)
+bool Channel::Unban(User *u, bool full, const Anope::string& type)
 {
-	if (!this->HasMode("BAN"))
+	if (!this->HasMode(type))
 		return false;
 
 	bool ret = false;
 
-	std::pair<Channel::ModeList::iterator, Channel::ModeList::iterator> bans = this->GetModeList("BAN");
+	std::pair<Channel::ModeList::iterator, Channel::ModeList::iterator> bans = this->GetModeList(type);
 	for (; bans.first != bans.second;)
 	{
-		Entry ban("BAN", bans.first->second);
+		Entry ban(type, bans.first->second);
 		++bans.first;
 		if (ban.Matches(u, full))
 		{
-			this->RemoveMode(NULL, "BAN", ban.GetMask());
+			this->RemoveMode(NULL, type, ban.GetMask());
 			ret = true;
 		}
 	}

@@ -279,7 +279,7 @@ class CoreExport Channel : public Base, public Extensible
 	 * @param full Whether or not to match using the user's real host and IP
 	 * @return whether or not a ban was removed
 	 */
-	bool Unban(User *u, bool full = false);
+	bool Unban(User *u, bool full = false, const Anope::string& type = "BAN");
 
 	/** Check whether a user is permitted to be on this channel
 	 * @param u The user

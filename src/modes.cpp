@@ -147,6 +147,35 @@ ChannelModeList::ChannelModeList(const Anope::string &cm, char mch) : ChannelMod
 	this->type = MODE_LIST;
 }
 
+ChannelMode* ChannelModeList::Unwrap(Anope::string& mask) anope_override
+{
+	for (std::vector<ChannelMode*>::iterator it = this->vListeners.begin(); it != vListeners.end(); ++it)
+	{
+		ChannelMode* cm = (*it)->Unwrap(mask);
+		if (cm && cm != this)
+			return cm;
+	}
+
+	return this;
+}
+
+ChannelVirtualMode::ChannelVirtualMode(const Anope::string& nme,const Anope::string& par) : ChannelModeList(nme, 0)
+{
+	this->type = MODE_VIRTUAL;
+
+	if (!(parent = anope_dynamic_static_cast<ChannelModeList*>(ModeManager::FindChannelModeByName(par))))
+		return;
+
+	parent->vListeners.push_back(this);
+}
+
+ChannelVirtualMode::~ChannelVirtualMode()
+{
+	std::vector<ChannelMode*>::iterator it = std::find(parent->vListeners.begin(), parent->vListeners.end(), this);
+	if (it!= parent->vListeners.end())
+		parent->vListeners.erase(it);
+}
+
 ChannelModeParam::ChannelModeParam(const Anope::string &cm, char mch, bool ma) : ChannelMode(cm, mch), minus_no_arg(ma)
 {
 	this->type = MODE_PARAM;

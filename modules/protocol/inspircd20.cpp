@@ -77,6 +77,29 @@ class InspIRCd20Proto : public IRCDProto
 	bool IsIdentValid(const Anope::string &ident) anope_override { return insp12->IsIdentValid(ident); }
 };
 
+class InspIRCdQuietMode : public  ChannelVirtualMode
+{
+ public:
+	InspIRCdQuietMode() : ChannelVirtualMode("QUIET", "BAN")
+	{
+	}
+
+	ChannelMode* Wrap(Anope::string& mask)
+	{
+		mask = "m:" + mask;
+		return this->parent;
+	}
+
+	ChannelMode* Unwrap(Anope::string& mask)
+	{
+		if (mask.length() < 2 || mask.substr(0, 2) != "m:")
+			return this->parent;
+
+		mask = mask.substr(2);
+		return this;
+	}
+};
+
 class InspIRCdExtBan : public ChannelModeList
 {
  public:
@@ -262,9 +285,11 @@ class ChannelModeRedirect : public ChannelModeParam
 
 struct IRCDMessageCapab : Message::Capab
 {
+	bool loadQuiet;
+
 	std::map<char, Anope::string> chmodes, umodes;
 
-	IRCDMessageCapab(Module *creator) : Message::Capab(creator, "CAPAB") { SetFlag(IRCDMESSAGE_SOFT_LIMIT); }
+	IRCDMessageCapab(Module *creator) : Message::Capab(creator, "CAPAB"), loadQuiet(false) { SetFlag(IRCDMESSAGE_SOFT_LIMIT); }
 
 	void Run(MessageSource &source, const std::vector<Anope::string> &params) anope_override
 	{
@@ -486,6 +511,8 @@ struct IRCDMessageCapab : Message::Capab
 					Servers::Capab.insert("CHGHOST");
 				else if (module.equals_cs("m_chgident.so"))
 					Servers::Capab.insert("CHGIDENT");
+				else if (module.equals_cs("m_muteban.so"))
+					loadQuiet = true;
 			}
 		}
 		else if (params[0].equals_cs("CAPABILITIES") && params.size() > 1)
@@ -601,6 +628,9 @@ struct IRCDMessageCapab : Message::Capab
 				Log() << "CHGHOST missing, Usage disabled until module is loaded.";
 			if (!Servers::Capab.count("CHGIDENT"))
 				Log() << "CHGIDENT missing, Usage disabled until module is loaded.";
+
+			if (loadQuiet)
+				ModeManager::AddChannelMode(new InspIRCdQuietMode());
 
 			chmodes.clear();
 			umodes.clear();

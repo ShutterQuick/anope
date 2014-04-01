@@ -20,6 +20,7 @@ enum ModeType
 	MODE_REGULAR,
 	/* b/e/I */
 	MODE_LIST,
+	MODE_VIRTUAL,
 	/* k/l etc */
 	MODE_PARAM,
 	/* v/h/o/a/q */
@@ -103,6 +104,9 @@ class CoreExport ChannelMode : public Mode
 	ChannelMode(const Anope::string &name, char mc);
 
 	bool CanSet(User *u) const anope_override;
+
+	virtual ChannelMode* Wrap(Anope::string& mask) { return this; }
+	virtual ChannelMode* Unwrap(Anope::string& mask) { return this; }
 };
 
 /** This is a mode for lists, eg b/e/I. These modes should inherit from this
@@ -110,6 +114,8 @@ class CoreExport ChannelMode : public Mode
 class CoreExport ChannelModeList : public ChannelMode
 {
  public:
+	std::vector<ChannelMode*> vListeners;
+
 	/** constructor
 	 * @param name The mode name
 	 * @param mc The mode char
@@ -141,6 +147,16 @@ class CoreExport ChannelModeList : public ChannelMode
 	 * @param mask The mask
 	 */
 	virtual void OnDel(Channel *chan, const Anope::string &mask) { }
+
+	virtual ChannelMode* Unwrap(Anope::string& mask);
+};
+
+class CoreExport ChannelVirtualMode : public ChannelModeList
+{
+ public:
+	ChannelModeList* parent;
+	ChannelVirtualMode(const Anope::string& nme, const Anope::string& par);
+	virtual ~ChannelVirtualMode();
 };
 
 /** This is a mode with a paramater, eg +k/l. These modes should use/inherit from this
