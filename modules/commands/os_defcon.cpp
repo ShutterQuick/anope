@@ -548,36 +548,29 @@ class OSDefcon : public Module
 static void runDefCon()
 {
 	BotInfo *OperServ = Config->GetClient("OperServ");
-	if (DConfig.Check(DEFCON_FORCE_CHAN_MODES))
-	{
-		if (!DConfig.chanmodes.empty() && !DefConModesSet)
-		{
-			if (DConfig.chanmodes[0] == '+' || DConfig.chanmodes[0] == '-')
-			{
-				Log(OperServ, "operserv/defcon") << "DEFCON: setting " << DConfig.chanmodes << " on all channels";
-				DefConModesSet = true;
-				for (channel_map::const_iterator it = ChannelList.begin(), it_end = ChannelList.end(); it != it_end; ++it)
-					it->second->SetModes(OperServ, false, "%s", DConfig.chanmodes.c_str());
-			}
-		}
-	}
-	else
-	{
-		if (!DConfig.chanmodes.empty() && DefConModesSet)
-		{
-			if (DConfig.chanmodes[0] == '+' || DConfig.chanmodes[0] == '-')
-			{
-				DefConModesSet = false;
-				Anope::string newmodes = defconReverseModes(DConfig.chanmodes);
-				if (!newmodes.empty())
-				{
-					Log(OperServ, "operserv/defcon") << "DEFCON: setting " << newmodes << " on all channels";
-					for (channel_map::const_iterator it = ChannelList.begin(), it_end = ChannelList.end(); it != it_end; ++it)
-						it->second->SetModes(OperServ, false, "%s", newmodes.c_str());
-				}
-			}
-		}
-	}
+
+	if (DConfig.chanmodes.empty())
+		return;
+
+	if (DConfig.chanmodes[0] != '+' && DConfig.chanmodes[0] != '-')
+		return;
+
+	// Return if we're already active and going up a level,
+	// or not active and going down a level
+	bool fcmcheck = DConfig.Check(DEFCON_FORCE_CHAN_MODES);
+	if ((!DefConModesSet && !fcmcheck) || (DefConModesSet && fcmcheck))
+		return;
+
+	// If we're removing, invert
+	const Anope::string &setmodes = fcmcheck
+		? DConfig.chanmodes
+		: defconReverseModes(DConfig.chanmodes);
+
+	Log(OperServ, "operserv/defcon") << "DEFCON: setting " << setmodes << " on all channels";
+	for (channel_map::const_iterator it = ChannelList.begin(), it_end = ChannelList.end(); it != it_end; ++it)
+		it->second->SetModes(OperServ, false, "%s", setmodes.c_str());
+
+	DefConModesSet = fcmcheck;
 }
 
 static Anope::string defconReverseModes(const Anope::string &modes)
