@@ -11,6 +11,7 @@
 
 #include "module.h"
 #include "modules/os_session.h"
+#include "modules/cs_mode.h"
 
 enum DefconLevel
 {
@@ -249,6 +250,7 @@ class OSDefcon : public Module
 	ServiceReference<SessionService> session_service;
 	ServiceReference<XLineManager> akills;
 	CommandOSDefcon commandosdefcon;
+	PrimitiveExtensibleItem<std::multimap<bool, std::pair<Anope::string, Anope::string> > > defconmodes;
 
 	void ParseModeString()
 	{
@@ -284,12 +286,7 @@ class OSDefcon : public Module
 
 			if ((cm = ModeManager::FindChannelModeByChar(mode)))
 			{
-				if (cm->type == MODE_STATUS || cm->type == MODE_LIST)
-				{
-					Log(this) << "DefConChanModes mode character '" << mode << "' cannot be locked";
-					continue;
-				}
-				else if (add)
+				if (add)
 				{
 					DConfig.DefConModesOn.insert(cm->name);
 					DConfig.DefConModesOff.erase(cm->name);
@@ -330,9 +327,8 @@ class OSDefcon : public Module
 	}
 
  public:
-	OSDefcon(const Anope::string &modname, const Anope::string &creator) : Module(modname, creator, VENDOR), session_service("SessionService", "session"), akills("XLineManager", "xlinemanager/sgline"), commandosdefcon(this)
+	OSDefcon(const Anope::string &modname, const Anope::string &creator) : Module(modname, creator, VENDOR), session_service("SessionService", "session"), akills("XLineManager", "xlinemanager/sgline"), commandosdefcon(this), defconmodes(this, "defconmodes")
 	{
-
 	}
 
 	void OnReload(Configuration::Conf *conf) anope_override
@@ -545,6 +541,150 @@ class OSDefcon : public Module
 	}
 };
 
+const ModeLock* getMlock(Channel *chan, ChannelMode *mode)
+{
+	ModeLocks *ml = chan->ci->GetExt<ModeLocks>("modelocks");
+	const ModeLock* lock = ml ? ml->GetMLock(mode->name) : NULL;
+	return lock;
+}
+
+bool mlockConflict(Channel *chan, bool adding, ChannelMode *mode, const Anope::string& param)
+{
+	if (DConfig.Check(DEFCON_NO_MLOCK_CHANGE) || !chan->ci)
+		return false;
+
+	const ModeLock *lock = getMlock(chan, mode);
+	return (lock && (lock->set != adding || lock->param != param));
+}
+
+// Parse modeline, remove modes that are mlocked for the channel,
+// and return the new modeline
+// Saves the data needed to restore original modes to the channel
+// returns "" if it encounters an unrecognized mode
+Anope::string saveDefConModes(const Anope::string &modeline, Channel *chan)
+{
+	typedef std::multimap<Anope::string, Anope::string> ModeList;
+	typedef std::multimap<bool, std::pair<Anope::string, Anope::string> > StatusMap;
+
+	const size_t delim = modeline.find(' ');
+	const Anope::string modes = modeline.substr(0, delim);
+	std::vector<Anope::string> params;
+
+	if (delim != Anope::string::npos)
+	{
+		spacesepstream ss(modeline.substr(delim + 1));
+		for (Anope::string param; ss.GetToken(param);)
+			params.push_back(param);
+	}
+
+	Anope::string ret_modes;
+	Anope::string ret_params;
+
+	StatusMap ms;
+
+	const size_t params_size = params.size();
+	bool adding = false;
+	size_t param_n = 0;
+	for (Anope::string::const_iterator mchar = modes.begin(); mchar != modes.end(); ++mchar)
+	{
+		if (*mchar == '+' || *mchar == '-')
+		{
+			adding = *mchar == '+';
+			ret_modes += adding ? "+" : "-";
+			continue;
+		}
+
+		ChannelMode* mode = ModeManager::FindChannelModeByChar(*mchar);
+		if (!mode)
+			continue;
+
+		if (getMlock(chan, mode))
+		{
+			if (mode->type != MODE_REGULAR)
+				++param_n;
+			continue;
+		}
+
+		if (param_n == params_size && mode->type != MODE_REGULAR)
+			return "";
+
+		if (mode->type == MODE_REGULAR || mode->type == MODE_PARAM)
+		{
+			const std::pair<ModeList::iterator, ModeList::iterator> range = chan->GetModeList(mode->name);
+			for (ModeList::iterator mit = range.first; mit != range.second; ++mit)
+			{
+				ms.insert(std::make_pair(true, std::make_pair(mode->mchar, mit->second)));
+				if (mode->type == MODE_PARAM)
+					++param_n;
+			}
+
+			if (range.first == range.second)
+				ms.insert(std::make_pair(false, std::make_pair(mode->mchar, mode->type == MODE_PARAM ? params[++param_n] : "")));
+		}
+		else if (mode->type == MODE_LIST)
+		{
+			const Anope::string& param = params[param_n++];
+			if (!chan->HasMode(mode->name, param))
+				ms.insert(std::make_pair(false, std::make_pair(mode->mchar, param)));
+		}
+		else if (mode->type == MODE_STATUS)
+		{
+			const Anope::string& param = params[param_n++];
+			User *u = User::Find(param, true);
+			if (u && ((adding && !chan->HasUserStatus(u, mode->name)) || (!adding && chan->HasUserStatus(u, mode->name))))
+				ms.insert(std::make_pair(!adding, std::make_pair(mode->mchar, param)));
+		}
+
+		ret_modes += mode->mchar;
+		if (mode->type != MODE_REGULAR)
+			ret_params += " " + params[param_n - 1];
+	}
+
+	chan->Extend<StatusMap>("defconmodes", ms);
+
+	return ret_modes + ret_params;
+}
+
+// Restore the pre-defcon modes on a channel
+// Returns the modestring, or "" if it encounters an unrecognized mode
+Anope::string loadDefConModes(Channel *chan)
+{
+	typedef std::multimap<bool, std::pair<Anope::string, Anope::string> > StatusMap;
+
+	StatusMap *ms = chan->GetExt<StatusMap>("defconmodes");
+	if (!ms)
+		return "";
+
+	Anope::string modes;
+	Anope::string params;
+	std::pair<StatusMap::iterator, StatusMap::iterator > range;
+
+	for (int i = false; i < 2; ++i)
+	{
+		modes += i == 0 ? "-" : "+";
+		range =  ms->equal_range(i);
+
+		for (StatusMap::iterator it = range.first; it != range.second; ++it)
+		{
+			ChannelMode *mode = ModeManager::FindChannelModeByChar(it->second.first[0]);
+			if (!mode)
+			{
+				chan->Shrink<StatusMap>("defconmodes");
+				return "";
+			}
+
+			if (mlockConflict(chan, it->first, mode, it->second.second))
+				continue;
+
+			modes += it->second.first;
+			params += it->second.second.empty() ? "" : " " + it->second.second;
+		}
+	}
+
+	chan->Shrink<StatusMap>("defconmodes");
+	return modes + params;
+}
+
 static void runDefCon()
 {
 	BotInfo *OperServ = Config->GetClient("OperServ");
@@ -568,7 +708,13 @@ static void runDefCon()
 
 	Log(OperServ, "operserv/defcon") << "DEFCON: setting " << setmodes << " on all channels";
 	for (channel_map::const_iterator it = ChannelList.begin(), it_end = ChannelList.end(); it != it_end; ++it)
-		it->second->SetModes(OperServ, false, "%s", setmodes.c_str());
+	{
+		// If we're enabling DefCon, save the current mode state
+		if (fcmcheck)
+			it->second->SetModes(OperServ, false, "%s", saveDefConModes(setmodes, it->second).c_str());
+		else
+			it->second->SetModes(OperServ, false, "%s", loadDefConModes(it->second).c_str());
+	}
 
 	DefConModesSet = fcmcheck;
 }
