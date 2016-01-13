@@ -51,6 +51,7 @@ void IdentifyRequest::Success(Module *m)
 	{
 		this->OnSuccess();
 		success = true;
+		FOREACH_MOD(OnIdentifyRequestSuccess, (this));
 	}
 }
 
