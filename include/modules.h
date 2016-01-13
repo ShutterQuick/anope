@@ -1096,6 +1096,17 @@ class CoreExport Module : public Extensible
 	 * @return EVENT_STOP to force the user off of the nick
 	 */
 	virtual EventReturn OnNickValidate(User *u, NickAlias *na) { throw NotImplementedException(); }
+
+	/** Called after an IdentifyRequest succeeds
+	 * @param req The identify request
+	 */
+	virtual void OnIdentifyRequestSuccess(IdentifyRequest *req) { throw NotImplementedException(); }
+
+	/** Called when a user's password is changed
+	 * @param nc Pointer to the NickCore which got a new password set.
+	 * @param pass The new password in cleartext
+	 */
+	virtual void OnPasswordChanged(NickCore *nc, const Anope::string &pass) { throw NotImplementedException(); }
 };
 
 enum Implementation
@@ -1120,7 +1131,7 @@ enum Implementation
 	I_OnPrivmsg, I_OnLog, I_OnLogMessage, I_OnDnsRequest, I_OnCheckModes, I_OnChannelSync, I_OnSetCorrectModes,
 	I_OnSerializeCheck, I_OnSerializableConstruct, I_OnSerializableDestruct, I_OnSerializableUpdate,
 	I_OnSerializeTypeCreate, I_OnSetChannelOption, I_OnSetNickOption, I_OnMessage, I_OnCanSet, I_OnCheckDelete,
-	I_OnExpireTick, I_OnNickValidate,
+	I_OnExpireTick, I_OnNickValidate, I_OnIdentifyRequestSuccess, I_OnPasswordChanged,
 	I_SIZE
 };
 
