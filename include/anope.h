@@ -137,6 +137,14 @@ namespace Anope
 		inline size_type capacity() const { return this->_string.capacity(); }
 
 		/**
+		 * Compare the string to another string.
+		 * @param Position of the first char to compare.
+		 * @param Amount of chars to compare. If shorter, as many as possible.
+		 * @param String to compare with.
+		 */
+		inline int compare(size_t pos, size_t len, const Anope::string &str) const { return this->_string.compare(pos, len, str._string); }
+
+		/**
 		 * Add a char to the end of the string.
 		 */
 		inline void push_back(char c) { return this->_string.push_back(c); }
